@@ -3,8 +3,30 @@
 # Move to the .ssh directory
 cd ~/.ssh || exit
 
-# 1. Scan ONLY for subdirectories containing 'id_ed25519'
-# Changed -mindepth 2 to ignore files in the current .ssh directory
+# --- 1. Startup Check: Handle existing real files ---
+# If id_ed25519 exists and is NOT a symbolic link
+if [ -f "id_ed25519" ] && [ ! -L "id_ed25519" ]; then
+    echo "Found existing real key files in ~/.ssh/ (not a symlink)."
+    read -p "Move them to a new profile folder? [Enter for Y / n]: " MOVE_CONFIRM
+    
+    if [[ -z "$MOVE_CONFIRM" || "$MOVE_CONFIRM" =~ ^[Yy]$ ]]; then
+        TIMESTAMP=$(date +%y%m%d%H%M%S)
+        DEFAULT_DIR="default-$TIMESTAMP"
+        
+        mkdir -p "$DEFAULT_DIR"
+        # Move all matching files (key, pub, etc) to the new folder
+        mv id_ed25519* "$DEFAULT_DIR/"
+        
+        # Adjust permissions
+        chmod 700 "$DEFAULT_DIR"
+        chmod 600 "$DEFAULT_DIR/id_ed25519"
+        chmod 644 "$DEFAULT_DIR/id_ed25519.pub"
+        
+        echo "Successfully moved existing keys to profile: $DEFAULT_DIR"
+    fi
+fi
+
+# --- 2. Scan for profiles ---
 get_profiles() {
     MAPFILE=()
     while IFS= read -r dir; do
@@ -14,7 +36,7 @@ get_profiles() {
 
 get_profiles
 
-# 2. Display the UI
+# --- 3. Display the UI ---
 echo "------------------------------------------"
 echo " SSH Key Manager (Switch or Create)"
 echo "------------------------------------------"
@@ -30,54 +52,53 @@ echo " [q] Quit"
 echo "------------------------------------------"
 read -p " Selection: " INPUT
 
-# 3. Handle 'n' (New Key Generation)
+# --- 4. Handle 'n' (New Key Generation) ---
 if [[ "$INPUT" == "n" ]]; then
-    read -p " > Enter folder name (e.g., rasp5-work): " NEW_DIR
-    if [[ -z "$NEW_DIR" ]]; then echo "❌ Folder name cannot be empty."; exit 1; fi
-    
-    # Check if folder already exists
-    if [ -d "$NEW_DIR" ]; then echo "❌ Folder already exists."; exit 1; fi
+    read -p " > Enter folder name (e.g., work-profile): " NEW_DIR
+    if [[ -z "$NEW_DIR" ]]; then echo "Error: Folder name cannot be empty."; exit 1; fi
+    if [ -d "$NEW_DIR" ]; then echo "Error: Folder already exists."; exit 1; fi
 
     read -p " > Enter email/identity (Optional): " IDENTITY
-    
+
     mkdir -p "$NEW_DIR"
     ssh-keygen -t ed25519 -C "$IDENTITY" -f "$HOME/.ssh/$NEW_DIR/id_ed25519" -N ""
-    
+
     chmod 700 "$NEW_DIR"
     chmod 600 "$NEW_DIR/id_ed25519"
     chmod 644 "$NEW_DIR/id_ed25519.pub"
-    
-    echo "✅ New profile [$NEW_DIR] created."
+
+    echo "New profile [$NEW_DIR] created."
     get_profiles
-    # Select the last added profile
     INPUT=$((${#MAPFILE[@]} - 1))
 fi
 
-# 4. Handle 'q' (Quit)
+# --- 5. Handle 'q' (Quit) ---
 if [[ "$INPUT" == "q" ]]; then
     exit 0
 fi
 
-# 5. Validate and Switch
+# --- 6. Validate and Switch ---
 SELECTED_DIR=${MAPFILE[$INPUT]}
 if [ -z "$SELECTED_DIR" ]; then
-    echo "❌ [Error] Invalid selection."
+    echo "Error: Invalid selection."
     exit 1
 fi
 
-# Update symbolic links
-rm -f id_ed25519 id_ed25519.pub
+# Cleanup: delete all id_ed25519* in .ssh before linking
+rm -f "$HOME/.ssh/id_ed25519"*
+
+# Create symbolic links
 ln -s "$SELECTED_DIR/id_ed25519" id_ed25519
 ln -s "$SELECTED_DIR/id_ed25519.pub" id_ed25519.pub
 
 # Finalize SSH agent
-echo "✅ SSH Key switched to: [$SELECTED_DIR]"
+echo "SSH Key switched to: [$SELECTED_DIR]"
 eval "$(ssh-agent -s)" > /dev/null
 ssh-add id_ed25519 2>/dev/null
 
-# 6. Display Public Key for GitHub
+# --- 7. Display Public Key for GitHub ---
 echo "----------------------------------------------------------------------"
-echo "📋 COPY THE PUBLIC KEY BELOW FOR GITHUB:"
+echo " COPY THE PUBLIC KEY BELOW FOR GITHUB:"
 echo "----------------------------------------------------------------------"
 cat id_ed25519.pub
 echo "----------------------------------------------------------------------"
