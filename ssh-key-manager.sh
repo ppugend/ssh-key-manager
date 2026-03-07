@@ -3,7 +3,20 @@
 # Move to the .ssh directory
 cd ~/.ssh || exit
 
-# --- 1. Startup Check: Handle existing real files ---
+# --- 1. Agent Check: Handle existing identities ---
+if ssh-add -l > /dev/null 2>&1; then
+    echo "Active SSH keys detected in agent."
+    read -p "Clear them to continue? [y / Enter to Exit]: " CLEAR_CONFIRM
+    if [[ "$CLEAR_CONFIRM" =~ ^[Yy]$ ]]; then
+        ssh-add -D 2>/dev/null
+        echo "Agent identities cleared."
+    else
+        echo "Exiting. Script requires a clean agent to function correctly."
+        exit 0
+    fi
+fi
+
+# --- 2. Startup Check: Handle existing real files ---
 # If id_ed25519 exists and is NOT a symbolic link
 if [ -f "id_ed25519" ] && [ ! -L "id_ed25519" ]; then
     echo "Found existing real key files in ~/.ssh/ (not a symlink)."
@@ -26,7 +39,7 @@ if [ -f "id_ed25519" ] && [ ! -L "id_ed25519" ]; then
     fi
 fi
 
-# --- 2. Scan for profiles ---
+# --- 3. Scan for profiles ---
 get_profiles() {
     MAPFILE=()
     while IFS= read -r dir; do
@@ -36,7 +49,7 @@ get_profiles() {
 
 get_profiles
 
-# --- 3. Display the UI ---
+# --- 4. Display the UI ---
 echo "------------------------------------------"
 echo " SSH Key Manager (Switch or Create)"
 echo "------------------------------------------"
@@ -48,11 +61,12 @@ else
     done
 fi
 echo " [n] Create a NEW key profile"
+echo " [x] None (Deactivate all)"
 echo " [q] Quit"
 echo "------------------------------------------"
 read -p " Selection: " INPUT
 
-# --- 4. Handle 'n' (New Key Generation) ---
+# --- 5. Handle 'n' (New Key Generation) ---
 if [[ "$INPUT" == "n" ]]; then
     read -p " > Enter folder name (e.g., work-profile): " NEW_DIR
     if [[ -z "$NEW_DIR" ]]; then echo "Error: Folder name cannot be empty."; exit 1; fi
@@ -72,12 +86,20 @@ if [[ "$INPUT" == "n" ]]; then
     INPUT=$((${#MAPFILE[@]} - 1))
 fi
 
-# --- 5. Handle 'q' (Quit) ---
+# --- 6. Handle 'x' (None / Deactivate All) ---
+if [[ "$INPUT" == "x" ]]; then
+    rm -f "$HOME/.ssh/id_ed25519"*
+    ssh-add -D 2>/dev/null
+    echo "All managed keys deactivated."
+    exit 0
+fi
+
+# --- 7. Handle 'q' (Quit) ---
 if [[ "$INPUT" == "q" ]]; then
     exit 0
 fi
 
-# --- 6. Validate and Switch ---
+# --- 8. Validate and Switch ---
 SELECTED_DIR=${MAPFILE[$INPUT]}
 if [ -z "$SELECTED_DIR" ]; then
     echo "Error: Invalid selection."
@@ -96,7 +118,7 @@ echo "SSH Key switched to: [$SELECTED_DIR]"
 eval "$(ssh-agent -s)" > /dev/null
 ssh-add id_ed25519 2>/dev/null
 
-# --- 7. Display Public Key for GitHub ---
+# --- 9. Display Public Key for GitHub ---
 echo "----------------------------------------------------------------------"
 echo " COPY THE PUBLIC KEY BELOW FOR GITHUB:"
 echo "----------------------------------------------------------------------"
