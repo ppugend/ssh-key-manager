@@ -49,6 +49,13 @@ get_profiles() {
 
 get_profiles
 
+# Detect current active profile
+CURRENT_PROFILE=""
+if [ -L "id_ed25519" ]; then
+    CURRENT_LINK=$(readlink "id_ed25519")
+    CURRENT_PROFILE=$(echo "$CURRENT_LINK" | cut -d'/' -f1)
+fi
+
 # --- 4. Display the UI ---
 echo "------------------------------------------"
 echo " SSH Key Manager (Switch or Create)"
@@ -57,11 +64,18 @@ if [ ${#MAPFILE[@]} -eq 0 ]; then
     echo " (No profiles found)"
 else
     for i in "${!MAPFILE[@]}"; do
-        printf " [%d] %s\n" "$i" "${MAPFILE[$i]}"
+        if [[ "${MAPFILE[$i]}" == "$CURRENT_PROFILE" ]]; then
+            printf " [%d]* %s (Active)\n" "$i" "${MAPFILE[$i]}"
+        else
+            printf " [%d]  %s\n" "$i" "${MAPFILE[$i]}"
+        fi
     done
 fi
+echo ""
 echo " [n] Create a NEW key profile"
+echo ""
 echo " [x] None (Deactivate all)"
+echo ""
 echo " [q] Quit"
 echo "------------------------------------------"
 read -p " Selection: " INPUT
@@ -90,6 +104,7 @@ fi
 if [[ "$INPUT" == "x" ]]; then
     rm -f "$HOME/.ssh/id_ed25519"*
     ssh-add -D 2>/dev/null
+    echo ""
     echo "All managed keys deactivated."
     exit 0
 fi
@@ -114,14 +129,15 @@ ln -s "$SELECTED_DIR/id_ed25519" id_ed25519
 ln -s "$SELECTED_DIR/id_ed25519.pub" id_ed25519.pub
 
 # Finalize SSH agent
+echo ""
 echo "SSH Key switched to: [$SELECTED_DIR]"
 eval "$(ssh-agent -s)" > /dev/null
 ssh-add id_ed25519 2>/dev/null
+ssh-add -l
 
 # --- 9. Display Public Key for GitHub ---
 echo "----------------------------------------------------------------------"
-echo " COPY THE PUBLIC KEY BELOW FOR GITHUB:"
+echo "              COPY THE PUBLIC KEY BELOW FOR GITHUB:"
 echo "----------------------------------------------------------------------"
 cat id_ed25519.pub
 echo "----------------------------------------------------------------------"
-ssh-add -l
